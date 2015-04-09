@@ -1,0 +1,2 @@
+# fishdetection
+Automatic fish classification
