@@ -1,0 +1,466 @@
+package com.example.fishdetection;
+
+
+import android.net.Uri;
+import android.os.Bundle;
+import android.provider.MediaStore;
+import android.app.Activity;
+import android.content.Intent;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.view.Menu;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.Button;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+public class MainActivity extends Activity {
+	
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		setContentView(R.layout.activity_main);
+		
+		Button openGallery = (Button) findViewById(R.id.getImage);
+		openGallery.setOnClickListener(btnChoosePhotoPressed);
+		
+		Button takePhoto = (Button) findViewById(R.id.getphoto);
+		takePhoto.setOnClickListener(btnGetPhoto);
+	}
+
+	Bitmap openedImage;
+	private TextView myText = null;
+	
+	@Override
+	public boolean onCreateOptionsMenu(Menu menu) {
+		// Inflate the menu; this adds items to the action bar if it is present.
+		getMenuInflater().inflate(R.menu.main, menu);
+		return true;
+	}
+
+	public OnClickListener btnGetPhoto = new OnClickListener() {      
+	    @Override
+	    public void onClick(View v) {
+	    	Intent cameraIntent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE); 
+	    	final int CAMERA_REQUEST = 1888; 
+            startActivityForResult(cameraIntent, CAMERA_REQUEST);
+	    }
+	};
+	
+	public OnClickListener btnChoosePhotoPressed = new OnClickListener() {      
+	    @Override
+	    public void onClick(View v) {
+	        Intent i = new Intent(Intent.ACTION_PICK,
+	                   android.provider.MediaStore.Images.Media.INTERNAL_CONTENT_URI);
+	        final int ACTIVITY_SELECT_IMAGE = 1234;
+	        startActivityForResult(i, ACTIVITY_SELECT_IMAGE); 
+	    }
+	};
+
+	int[] pixels, red, green, blue;
+	int width , height;
+	int avgR = 0, avgG = 0, avgB = 0, count = 0;
+	
+	int noCluster = 3;
+    int[] newR = new int[noCluster];
+    int[] newG = new int[noCluster];
+    int[] newB = new int[noCluster];
+    
+    // fish1 data
+    private int[] fish1R = {134, 134, 144, 145, 145, 144, 132, 136, 138, 144};
+    private int[] fish1G = {114, 113, 108, 107, 107, 107, 119, 121, 120, 128};
+    private int[] fish1B = {113, 112, 104, 103, 102, 102, 98, 95, 98, 101};
+    private int sumFish1 = fish1R.length;
+    private int countR1 = 0;
+    private int countG1 = 0;
+    private int countB1 = 0;
+    
+    // fish2 data
+    private int[] fish2R = {128, 128, 126, 120, 119, 124, 128, 128, 127, 127};
+    private int[] fish2G = {119, 119, 116, 109, 108, 112, 116, 117, 117, 117};
+    private int[] fish2B = {106, 107, 100, 95, 94, 97, 98, 101, 103, 103};
+    private int sumFish2 = fish2R.length;
+    private int countR2 = 0;
+    private int countG2 = 0;
+    private int countB2 = 0;
+    
+    // fish3 data
+    private int[] fish3R = {124, 124, 121, 121, 123, 123, 123, 123, 122, 121};
+    private int[] fish3G = {111, 111, 111, 110, 109, 110, 111, 111, 111, 110};
+    private int[] fish3B = {93, 93, 89, 90, 88, 88, 91, 92, 92, 92};
+    private int sumFish3 = fish3R.length;
+    private int countR3 = 0;
+    private int countG3 = 0;
+    private int countB3 = 0;
+    
+    private int sumFish = sumFish1 + sumFish2 + sumFish3;
+    
+    private double type1R, type1G, type1B, type2R, type2G, type2B, type3R, type3G, type3B;
+    private double type1 = 0, type2 = 0, type3 = 0;
+	
+	protected void onActivityResult(int requestCode, int resultCode, Intent data) 
+	{
+	    super.onActivityResult(requestCode, resultCode, data); 
+
+	    switch(requestCode) { 
+	    case 1234:
+	        if(resultCode == RESULT_OK && requestCode != 1888){  
+	            Uri selectedImage = data.getData();
+	            String[] filePathColumn = {MediaStore.Images.Media.DATA};
+
+	            Cursor cursor = getContentResolver().query(selectedImage, filePathColumn, null, null, null);
+	            cursor.moveToFirst();
+
+	            int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+	            String filePath = cursor.getString(columnIndex);
+	            cursor.close();
+
+	            openedImage = BitmapFactory.decodeFile(filePath);
+	            openedImage = Bitmap.createScaledBitmap(openedImage, 320, 240, true);
+	            ImageView imgView;
+	    		imgView = (ImageView) findViewById(R.id.uploadImage);
+	    		imgView.setImageBitmap(openedImage);
+
+	    		width = openedImage.getWidth();
+	    		height = openedImage.getHeight();
+	    		pixels = new int[width * height];
+	    		
+	    		openedImage.getPixels(pixels, 0, openedImage.getWidth(), 0, 0, openedImage.getWidth(), openedImage.getHeight());
+	        
+	    		red = new int[pixels.length];
+	    		green = new int[pixels.length];
+	    		blue = new int[pixels.length];
+	    		
+	    		for(int i = 0; i < pixels.length; i++){
+	    			int rgb = pixels[i];
+	    			red[i] = (rgb >>> 16) & 0xFF;
+	    			green[i] = (rgb >>> 8) & 0xFF;
+	    			blue[i] = rgb & 0xFF;
+	    		}
+
+	    		int distance = 0;
+	            int bestDistance = 0;
+	            int[] group = new int[pixels.length];
+
+	            newR[0] = 156;
+	            newG[0] = 137;
+	            newB[0] = 149;
+
+	            newR[1] = 166;
+	            newG[1] = 154;
+	            newB[1] = 162;
+	            
+	            newR[2] = 162;
+	            newG[2] = 115;
+	            newB[2] = 130;
+	            
+	            for(int i = 0; i < pixels.length; i++){
+	                for(int j = 0; j < noCluster; j++){
+	                    distance = (int)Math.sqrt( (Math.pow((red[i] - newR[j]), 2)) + 
+	                        (Math.pow((green[i] - newG[j]), 2)) + (Math.pow((blue[i] - newB[j]), 2)) ); 
+	                    if(distance >= bestDistance){
+	                        bestDistance = distance;
+	                        group[i] = j;
+	                    }
+	                }
+	                distance = 0;
+	                bestDistance = 0;
+	            }
+	            
+	            for(int i = 0; i < pixels.length; i++){
+	                if(group[i] != 1){
+	                    red[i] = 0;
+	                    green[i] = 0;
+	                    blue[i] = 0;
+	                }
+	        }
+
+	        for(int i = 0; i < pixels.length; i++){
+	            if(red[i] != 0 && green[i] != 0 && blue[i] != 0){
+	                if((red[i] > 161 || red[i] < 151) && (green[i] > 142 || green[i] < 132) && (blue[i] > 154 || blue[i] < 144)){
+	                    avgR += red[i];
+	                    avgG+= green[i];
+	                    avgB += blue[i];
+	                    count++;
+	                }
+	            }
+	        }
+	        
+	        avgR = avgR/count;
+	        avgG = avgG/count;
+	        avgB = avgB/count;
+	    	for(int i = 0; i < sumFish1; i++){
+	    		if((avgR-10) <= fish1R[i] && (avgR+10) >= fish1R[i]){
+	    			countR1++;
+	    		}
+	    		if((avgG-10) <= fish1G[i] && (avgG+10) >= fish1G[i]){
+	    			countG1++;
+	    		}
+	    		if((avgB-10) <= fish1B[i] && (avgB+10) >= fish1B[i]){
+	    			countB1++;
+	    		}
+	    	}
+	    	
+	    	for(int i = 0; i < sumFish2; i++){
+	    		if((avgR-10) <= fish2R[i] && (avgR+10) >= fish2R[i]){
+	    			countR2++;
+	    		}
+	    		if((avgG-10) <= fish2G[i] && (avgG+10) >= fish2G[i]){
+	    			countG2++;
+	    		}
+	    		if((avgB-10) <= fish2B[i] && (avgB+10) >= fish2B[i]){
+	    			countB2++;
+	    		}
+	    	}
+	    	
+	    	for(int i = 0; i < sumFish3; i++){
+	    		if((avgR-10) <= fish3R[i] && (avgR+10) >= fish3R[i]){
+	    			countR3++;
+	    		}
+	    		if((avgG-10) <= fish3G[i] && (avgG+10) >= fish3G[i]){
+	    			countG3++;
+	    		}
+	    		if((avgB-10) <= fish3B[i] && (avgB+10) >= fish3B[i]){
+	    			countB3++;
+	    		}
+	    	}
+	    	
+	    	type1R = (((double)countR1 / (double)sumFish1) * ((double)sumFish1 / (double)sumFish)) /
+                    (double)(((double)countR1 + (double)countR2 + (double)countR3) / (double)sumFish);
+            type1G = (((double)countG1 / (double)sumFish1) * ((double)sumFish1 / (double)sumFish)) /
+                    (double)(((double)countG1 + (double)countG2 + (double)countG3) / (double)sumFish);
+            type1B = (((double)countB1 / (double)sumFish1) * ((double)sumFish1 / (double)sumFish)) /
+                    (double)(((double)countB1 + (double)countB2 + (double)countB3) / (double)sumFish);
+            
+            type2R = (((double)countR2 / (double)sumFish2) * ((double)sumFish2 / (double)sumFish)) /
+                    (double)(((double)countR1 + (double)countR2 + (double)countR3) / (double)sumFish);
+            type2G = (((double)countG2 / (double)sumFish2) * ((double)sumFish2 / (double)sumFish)) /
+                    (double)(((double)countG1 + (double)countG2 + (double)countG3) / (double)sumFish);
+            type2B = (((double)countB2 / (double)sumFish2) * ((double)sumFish2 / (double)sumFish)) /
+                    (double)(((double)countB1 + (double)countB2 + (double)countB3) / (double)sumFish);
+            
+            type3R = (((double)countR3 / (double)sumFish3) * ((double)sumFish3 / (double)sumFish)) /
+                    (double)(((double)countR1 + (double)countR2 + (double)countR3) / (double)sumFish);
+            type3G = (((double)countG3 / (double)sumFish3) * ((double)sumFish3 / (double)sumFish)) /
+                    (double)(((double)countG1 + (double)countG2 + (double)countG3) / (double)sumFish);
+            type3B = (((double)countB3 / (double)sumFish3) * ((double)sumFish3 / (double)sumFish)) /
+                    (double)(((double)countB1 + (double)countB2 + (double)countB3) / (double)sumFish);
+	        
+            type1 += type1R + type1G + type1B;
+            type2 += type2R + type2G + type2B;
+            type3 += type3R + type3G + type3B;
+            //System.out.println(type1 + " and " + type2 + " and " + type3);
+
+            LinearLayout lView = (LinearLayout)findViewById(R.id.displayResult);
+            lView.removeAllViewsInLayout();
+            myText = new TextView(this);
+            
+            if(type1 >= type2 && type1 >= type3){
+            	myText.setText("Red Tilapia");
+            }
+            else if(type2 >= type1 && type2 >= type3){
+            	myText.setText("White Pomfret");
+            }
+            else if(type3 >= type2 && type3 >= type1){
+            	myText.setText("Yellow Selar");
+            }
+            else{
+            	myText.setText("Not a Fish or Fish is not recognized");
+            }
+            lView.addView(myText);
+
+            
+            type1 = 0;
+            type2 = 0;
+            type3 = 0;
+            count = 0;
+            countR1 = 0;
+            countG1 = 0;
+            countB1 = 0;
+            countR2 = 0;
+            countG2 = 0;
+            countB2 = 0;
+            countR3 = 0;
+            countG3 = 0;
+            countB3 = 0;
+	        }
+	    case 1888:
+	    	if(resultCode == RESULT_OK && requestCode != 1234){ 
+	    		Bitmap photo = (Bitmap) data.getExtras().get("data"); 
+	    		photo = Bitmap.createScaledBitmap(photo, 320, 240, true);
+	    		ImageView imageView;
+	    		imageView = (ImageView)this.findViewById(R.id.photoImage);
+	            imageView.setImageBitmap(photo);
+	            
+	            width = photo.getWidth();
+	    		height = photo.getHeight();
+	    		pixels = new int[width * height];
+	    		photo.getPixels(pixels, 0, photo.getWidth(), 0, 0, photo.getWidth(), photo.getHeight());
+	        
+	    		red = new int[pixels.length];
+	    		green = new int[pixels.length];
+	    		blue = new int[pixels.length];
+	    		
+	    		for(int i = 0; i < pixels.length; i++){
+	    			int rgb = pixels[i];
+	    			red[i] = (rgb >>> 16) & 0xFF;
+	    			green[i] = (rgb >>> 8) & 0xFF;
+	    			blue[i] = rgb & 0xFF;
+	    		}
+
+	    		int distance = 0;
+	            int bestDistance = 0;
+	            int[] group = new int[pixels.length];
+
+	            newR[0] = 156;
+	            newG[0] = 137;
+	            newB[0] = 149;
+
+	            newR[1] = 166;
+	            newG[1] = 154;
+	            newB[1] = 162;
+	            
+	            newR[2] = 162;
+	            newG[2] = 115;
+	            newB[2] = 130;
+	            
+	            for(int i = 0; i < pixels.length; i++){
+	                for(int j = 0; j < noCluster; j++){
+	                    distance = (int)Math.sqrt( (Math.pow((red[i] - newR[j]), 2)) + 
+	                        (Math.pow((green[i] - newG[j]), 2)) + (Math.pow((blue[i] - newB[j]), 2)) ); 
+	                    if(distance >= bestDistance){
+	                        bestDistance = distance;
+	                        group[i] = j;
+	                    }
+	                }
+	                distance = 0;
+	                bestDistance = 0;
+	            }
+	            
+	            for(int i = 0; i < pixels.length; i++){
+	                if(group[i] != 1){
+	                    red[i] = 0;
+	                    green[i] = 0;
+	                    blue[i] = 0;
+	                }
+	        }
+
+	        for(int i = 0; i < pixels.length; i++){
+	            if(red[i] != 0 && green[i] != 0 && blue[i] != 0){
+	                if((red[i] > 161 || red[i] < 151) && (green[i] > 142 || green[i] < 132) && (blue[i] > 154 || blue[i] < 144)){
+	                    avgR += red[i];
+	                    avgG+= green[i];
+	                    avgB += blue[i];
+	                    count++;
+	                }
+	            }
+	        }
+	        
+	        avgR = avgR/count;
+	        avgG = avgG/count;
+	        avgB = avgB/count;
+	        System.out.println(avgR + " " + avgG + " " + avgB);
+	    	for(int i = 0; i < sumFish1; i++){
+	    		if((avgR-10) <= fish1R[i] && (avgR+10) >= fish1R[i]){
+	    			countR1++;
+	    		}
+	    		if((avgG-10) <= fish1G[i] && (avgG+10) >= fish1G[i]){
+	    			countG1++;
+	    		}
+	    		if((avgB-10) <= fish1B[i] && (avgB+10) >= fish1B[i]){
+	    			countB1++;
+	    		}
+	    	}
+	    	
+	    	for(int i = 0; i < sumFish2; i++){
+	    		if((avgR-10) <= fish2R[i] && (avgR+10) >= fish2R[i]){
+	    			countR2++;
+	    		}
+	    		if((avgG-10) <= fish2G[i] && (avgG+10) >= fish2G[i]){
+	    			countG2++;
+	    		}
+	    		if((avgB-10) <= fish2B[i] && (avgB+10) >= fish2B[i]){
+	    			countB2++;
+	    		}
+	    	}
+	    	
+	    	for(int i = 0; i < sumFish3; i++){
+	    		if((avgR-10) <= fish3R[i] && (avgR+10) >= fish3R[i]){
+	    			countR3++;
+	    		}
+	    		if((avgG-10) <= fish3G[i] && (avgG+10) >= fish3G[i]){
+	    			countG3++;
+	    		}
+	    		if((avgB-10) <= fish3B[i] && (avgB+10) >= fish3B[i]){
+	    			countB3++;
+	    		}
+	    	}
+	    	
+	    	type1R = (((double)countR1 / (double)sumFish1) * ((double)sumFish1 / (double)sumFish)) /
+                    (double)(((double)countR1 + (double)countR2 + (double)countR3) / (double)sumFish);
+            type1G = (((double)countG1 / (double)sumFish1) * ((double)sumFish1 / (double)sumFish)) /
+                    (double)(((double)countG1 + (double)countG2 + (double)countG3) / (double)sumFish);
+            type1B = (((double)countB1 / (double)sumFish1) * ((double)sumFish1 / (double)sumFish)) /
+                    (double)(((double)countB1 + (double)countB2 + (double)countB3) / (double)sumFish);
+            
+            type2R = (((double)countR2 / (double)sumFish2) * ((double)sumFish2 / (double)sumFish)) /
+                    (double)(((double)countR1 + (double)countR2 + (double)countR3) / (double)sumFish);
+            type2G = (((double)countG2 / (double)sumFish2) * ((double)sumFish2 / (double)sumFish)) /
+                    (double)(((double)countG1 + (double)countG2 + (double)countG3) / (double)sumFish);
+            type2B = (((double)countB2 / (double)sumFish2) * ((double)sumFish2 / (double)sumFish)) /
+                    (double)(((double)countB1 + (double)countB2 + (double)countB3) / (double)sumFish);
+            
+            type3R = (((double)countR3 / (double)sumFish3) * ((double)sumFish3 / (double)sumFish)) /
+                    (double)(((double)countR1 + (double)countR2 + (double)countR3) / (double)sumFish);
+            type3G = (((double)countG3 / (double)sumFish3) * ((double)sumFish3 / (double)sumFish)) /
+                    (double)(((double)countG1 + (double)countG2 + (double)countG3) / (double)sumFish);
+            type3B = (((double)countB3 / (double)sumFish3) * ((double)sumFish3 / (double)sumFish)) /
+                    (double)(((double)countB1 + (double)countB2 + (double)countB3) / (double)sumFish);
+	        
+            type1 += type1R + type1G + type1B;
+            type2 += type2R + type2G + type2B;
+            type3 += type3R + type3G + type3B;
+            /*System.out.println(type1R + " and " + type2R + " and " + type3R);
+            System.out.println(type1G + " and " + type2G + " and " + type3G);
+            System.out.println(type1B + " and " + type2B + " and " + type3B);
+            System.out.println(type1 + " and " + type2 + " and " + type3);*/
+            
+            LinearLayout lView = (LinearLayout)findViewById(R.id.displayResult);
+            lView.removeAllViewsInLayout();
+            myText = new TextView(this);
+            
+            if(type1 >= type2 && type1 >= type3){
+            	myText.setText("Red Tilapia");
+            }
+            else if(type2 >= type1 && type2 >= type3){
+            	myText.setText("White Pomfret");
+            }
+            else if(type3 >= type2 && type3 >= type1){
+            	myText.setText("Yellow Selar");
+            }
+            else{
+            	myText.setText("Not a Fish or Fish is not recognized");
+            }
+            lView.addView(myText);
+            
+            type1 = 0;
+            type2 = 0;
+            type3 = 0;
+            count = 0;
+            countR1 = 0;
+            countG1 = 0;
+            countB1 = 0;
+            countR2 = 0;
+            countG2 = 0;
+            countB2 = 0;
+            countR3 = 0;
+            countG3 = 0;
+            countB3 = 0;
+	    	}
+	    }
+	};
+
+}
